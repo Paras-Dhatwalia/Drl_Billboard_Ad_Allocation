@@ -1,0 +1,92 @@
+# ============================================================================
+# EXACT PACKAGE REQUIREMENTS FOR BILLBOARD ALLOCATION ENVIRONMENT
+# ============================================================================
+# These are the EXACT versions currently working in your environment
+# Use this file to ensure identical setup in new environments
+# ============================================================================
+
+# ===== CORE DEEP LEARNING =====
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+
+# NOTE: If you have CUDA 12.1, use:
+# torch==2.5.1+cu121
+# torchvision==0.20.1+cu121
+# torchaudio==2.5.1+cu121
+# Install with: pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# ===== GRAPH NEURAL NETWORKS =====
+torch-geometric==2.7.0
+
+# NOTE: torch-geometric dependencies (install after torch):
+# torch-scatter
+# torch-sparse
+# torch-cluster
+# torch-spline-conv
+# These will be auto-installed with torch-geometric
+
+# ===== REINFORCEMENT LEARNING =====
+tianshou==1.2.0
+gymnasium==0.28.1
+pettingzoo==1.24.3
+
+# ===== SCIENTIFIC COMPUTING =====
+numpy==1.26.4
+scipy==1.15.1
+pandas==2.3.3
+
+# ===== GRAPH UTILITIES =====
+networkx==3.4.2
+
+# ===== VISUALIZATION & LOGGING =====
+tensorboard==2.20.0
+tensorboard-data-server==0.7.2
+matplotlib==3.10.0
+seaborn==0.13.2
+
+# ===== SYSTEM UTILITIES =====
+psutil==6.1.1
+
+# ===== ADDITIONAL DEPENDENCIES (Auto-installed but listed for completeness) =====
+# These are dependencies of the above packages, but listing for reference:
+# typing-extensions>=4.0.0
+# pillow>=8.0.0
+# filelock
+# sympy
+# jinja2
+# fsspec
+# MarkupSafe
+
+# ============================================================================
+# INSTALLATION INSTRUCTIONS
+# ============================================================================
+
+# 1. CREATE NEW VIRTUAL ENVIRONMENT
+# python3 -m venv venv
+# source venv/bin/activate  # On Linux/Mac
+# venv\Scripts\activate     # On Windows
+
+# 2. UPGRADE PIP
+# pip install --upgrade pip
+
+# 3. INSTALL PYTORCH (WITH CUDA SUPPORT)
+# For CUDA 12.1:
+# pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# For CPU only:
+# pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
+
+# 4. INSTALL TORCH-GEOMETRIC
+# pip install torch-geometric==2.7.0
+
+# 5. INSTALL REMAINING PACKAGES
+# pip install tianshou==1.2.0 gymnasium==0.28.1 pettingzoo==1.24.3 numpy==1.26.4 scipy==1.15.1 pandas==2.3.3 networkx==3.4.2 tensorboard==2.20.0 matplotlib==3.10.0 seaborn==0.13.2 psutil==6.1.1
+
+# ============================================================================
+# VERIFY INSTALLATION
+# ============================================================================
+# Run this command to verify all packages are installed:
+# pip list | grep -E "torch|tianshou|gymnasium|numpy|pandas|tensorboard"
+
+# Expected output should match versions above
