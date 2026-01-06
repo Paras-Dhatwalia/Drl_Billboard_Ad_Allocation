@@ -440,7 +440,7 @@ def main(use_test_config: bool = True):
     # Our model returns: (logits, state) tuple
     # We need to unwrap this
     class TianshouActorWrapper(torch.nn.Module):
-        """Wrapper to make BillboardAllocatorGNN compatible with Tianshou"""
+        """Wrapper to make BillboardAllocatorGNN compatible with Tianshou for ACTOR"""
         def __init__(self, model):
             super().__init__()
             self.model = model
@@ -468,8 +468,38 @@ def main(use_test_config: bool = True):
             # Tianshou's PPOPolicy will handle this correctly
             return logits, new_state
 
+    class TianshouCriticWrapper(torch.nn.Module):
+        """Wrapper to make BillboardAllocatorGNN compatible with Tianshou for CRITIC.
+
+        CRITICAL: Critic must return only the value tensor, NOT a tuple!
+        Tianshou's PPO expects critic(obs) -> value_tensor
+        """
+        def __init__(self, model):
+            super().__init__()
+            self.model = model
+
+        def forward(self, obs, state=None, info={}):
+            """
+            Forward pass for critic - returns ONLY value tensor.
+
+            Args:
+                obs: Observations (dict or batch)
+                state: Optional recurrent state
+                info: Optional info dict
+
+            Returns:
+                value: Value tensor (NOT a tuple!)
+            """
+            if info is None:
+                info = {}
+
+            # Call base model - it returns (value, state)
+            value, _ = self.model(obs, state, info)
+            # Return ONLY the value tensor for Tianshou compatibility
+            return value
+
     actor = TianshouActorWrapper(actor_base)
-    critic = TianshouActorWrapper(critic_base)
+    critic = TianshouCriticWrapper(critic_base)  # Use critic-specific wrapper
 
     # Log model parameters
     actor_params = sum(p.numel() for p in actor.parameters())
