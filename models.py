@@ -1053,8 +1053,8 @@ DEFAULT_CONFIGS = {
         'mode': 'ea',
         'n_billboards': 444,
         'max_ads': 20,
-        'use_attention': True,
-        'conv_type': 'gat',   # GAT for better attention modeling
+        'use_attention': False,  # Disabled - attention causes OOM with large EA action space
+        'conv_type': 'gin',   # GIN instead of GAT - GAT uses attention which causes OOM
         'dropout': 0.15,
         'min_val': -1e8
     },
@@ -1092,7 +1092,7 @@ DEFAULT_CONFIGS = {
         'mode': 'ea',
         'n_billboards': 50,
         'max_ads': 10,
-        'use_attention': True,
+        'use_attention': False,  # Disabled for EA mode to avoid OOM
         'conv_type': 'gin',
         'dropout': 0.1
     },
