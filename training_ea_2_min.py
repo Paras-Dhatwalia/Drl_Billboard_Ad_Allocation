@@ -137,6 +137,11 @@ def get_full_config():
     - Lower entropy coefficient (EA has high dimensionality)
     - Smaller learning rate (Bernoulli PPO is noisier)
     - Moderate batch size (helps with sparse rewards)
+
+    Memory-optimized for 16GB GPU:
+    - Smaller batch size (32) for EA's large action space
+    - Fewer parallel envs (4) to reduce buffer memory
+    - Reduced hidden_dim (128) for efficiency
     """
     return {
         # Environment config
@@ -152,8 +157,8 @@ def get_full_config():
         },
         # Training config
         "train": {
-            "hidden_dim": 256,  # Large model for complex interactions
-            "n_graph_layers": 4,
+            "hidden_dim": 128,  # Reduced from 256 for memory efficiency
+            "n_graph_layers": 3,  # Reduced from 4
             "lr": 1e-4,  # EA: lower LR for stability
             "discount_factor": 0.99,
             "gae_lambda": 0.95,
@@ -161,10 +166,10 @@ def get_full_config():
             "ent_coef": 0.005,  # EA: much lower entropy (high-dim action space)
             "max_grad_norm": 0.5,
             "eps_clip": 0.2,
-            "batch_size": 128,
-            "nr_envs": 8,  # More parallel envs
+            "batch_size": 32,  # Reduced from 128 for EA mode
+            "nr_envs": 4,  # Reduced from 8 for memory
             "max_epoch": 200,
-            "step_per_collect": 4096,
+            "step_per_collect": 2048,  # Reduced from 4096
             "step_per_epoch": 100000,
             "repeat_per_collect": 15,
             "save_path": "models/ppo_billboard_ea.pt",
@@ -423,7 +428,7 @@ def main(use_test_config: bool = True):
         'mode': 'ea',  # CRITICAL: Edge Action mode
         'n_billboards': n_billboards,
         'max_ads': max_ads,
-        'use_attention': True,
+        'use_attention': False,  # Disabled for EA - attention causes OOM with large action space
         'conv_type': 'gat',  # GAT for better pair modeling
         'dropout': 0.15
     }
