@@ -494,7 +494,7 @@ def main(use_test_config: bool = True):
                 info = {}
 
             # Call base model - it returns (value, state)
-            value, _ = self.model(obs, state, info)
+            value = self.model.critic_forward(obs)
             # Return ONLY the value tensor for Tianshou compatibility
             return value
 
@@ -704,7 +704,7 @@ def main(use_test_config: bool = True):
         'model_config': model_config,
         'train_config': train_config,
         'env_config': env_config,
-        'final_reward': result.get("best_reward", 0),
+        'final_reward': best_reward,
         'mode': 'ea',
         'distribution': 'IndependentBernoulli'
     }, final_path)
@@ -727,10 +727,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Train EA mode PPO agent')
-    parser.add_argument('--full', action='store_true',
-                       help='Use full config instead of test config')
+    parser.add_argument('--test', action='store_true',
+                       help='Use test config instead of full config (for quick debugging)')
     args = parser.parse_args()
 
     # Run training
-    use_test = not args.full
+    use_test = args.test
     result = main(use_test_config=use_test)
