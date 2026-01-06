@@ -429,7 +429,7 @@ def main(use_test_config: bool = True):
         'n_billboards': n_billboards,
         'max_ads': max_ads,
         'use_attention': False,  # Disabled for EA - attention causes OOM with large action space
-        'conv_type': 'gat',  # GAT for better pair modeling
+        'conv_type': 'gin',  # GIN instead of GAT - GAT uses attention which causes OOM
         'dropout': 0.15
     }
 
