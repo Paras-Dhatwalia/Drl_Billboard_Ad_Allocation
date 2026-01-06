@@ -239,3 +239,72 @@ class MinimalWrapper(gym.Wrapper):
 
     def step(self, action):
         return self.env.step(action)
+
+
+class BillboardPettingZooWrapper(gym.Wrapper):
+    """
+    Compatibility wrapper for Billboard environment.
+
+    HISTORICAL NOTE: This wrapper was originally intended for PettingZoo AECEnv
+    conversion, but the environment is now a standard Gymnasium gym.Env.
+
+    This wrapper now serves as:
+    1. A pass-through wrapper that ensures gym.Env compatibility
+    2. A place to add any EA/MH mode specific preprocessing
+    3. Ensures consistent interface for training scripts
+
+    The wrapper preserves all environment attributes and methods while
+    providing a clean interface for Tianshou vectorized environments.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+
+        # Preserve key environment attributes for external access
+        self.action_mode = getattr(env, 'action_mode', 'na')
+        self.n_nodes = getattr(env, 'n_nodes', None)
+        self.n_billboards = self.n_nodes  # Alias for clarity
+
+        # Store config reference
+        if hasattr(env, 'config'):
+            self.config = env.config
+            self.max_ads = env.config.max_active_ads
+        else:
+            self.config = None
+            self.max_ads = 20
+
+        # Store graph structure for models that need it
+        if hasattr(env, 'edge_index'):
+            self._edge_index = env.edge_index.copy()
+        else:
+            self._edge_index = None
+
+        logger.info(f"BillboardPettingZooWrapper initialized: mode={self.action_mode}, "
+                   f"billboards={self.n_nodes}, max_ads={self.max_ads}")
+
+    @property
+    def edge_index(self):
+        """Access graph edge index."""
+        return self._edge_index
+
+    def get_graph(self) -> np.ndarray:
+        """Get graph structure for models."""
+        return self._edge_index
+
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
+        """Reset environment."""
+        obs, info = self.env.reset(seed=seed, options=options)
+        return obs, info
+
+    def step(self, action):
+        """Execute action and return results."""
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return obs, reward, terminated, truncated, info
+
+    def render(self, mode: str = "human"):
+        """Render environment."""
+        return self.env.render(mode=mode)
+
+    def close(self):
+        """Close environment."""
+        return self.env.close()
