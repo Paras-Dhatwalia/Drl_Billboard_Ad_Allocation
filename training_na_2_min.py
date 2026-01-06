@@ -2,7 +2,7 @@
 PPO Training for Billboard Allocation - NA Mode (Minimal Logging Version)
 
 This version suppresses verbose logging for clean training output.
-For detailed debugging logs, use training_na_2.py instead.
+For detailed debugging logs, training_na_2.py is used instead.
 """
 
 import os
