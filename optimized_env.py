@@ -27,6 +27,7 @@ class EnvConfig:
     tardiness_cost: float = 50.0
     max_events: int = 1000
     max_active_ads: int = 20
+    ad_ttl: int = 600  # Ad time-to-live in timesteps (default: 600 = 10 hours)
     graph_connection_distance: float = 5000.0
     cache_ttl: int = 1  # Cache TTL in steps
     enable_profiling: bool = False
@@ -347,7 +348,7 @@ class OptimizedBillboardEnv(gym.Env):
             
             self.ads_db.append(
                 Ad(aid=int(aid), demand=float(demand), payment=float(payment),
-                   payment_demand_ratio=float(ratio), ttl=15)
+                   payment_demand_ratio=float(ratio), ttl=self.config.ad_ttl)
             )
         
         # Load and validate trajectory data
@@ -524,11 +525,15 @@ class OptimizedBillboardEnv(gym.Env):
         free_mask = np.array([b.is_free() for b in self.billboards], dtype=bool)
         costs = np.array([b.b_cost for b in self.billboards], dtype=np.float32)
 
+        # Account for per-timestep cost: use max duration for conservative estimate
+        max_duration = self.config.slot_duration_range[1]
+        total_costs = costs * max_duration
+
         if self.action_mode == 'na':
             # NA mode: mask free billboards that current ad can afford
             if self.current_ad_for_na_mode is not None:
-                # Vectorized: free AND affordable
-                affordable = self.current_ad_for_na_mode.remaining_budget >= costs
+                # Vectorized: free AND affordable (cost × max_duration)
+                affordable = self.current_ad_for_na_mode.remaining_budget >= total_costs
                 mask = (free_mask & affordable).astype(np.int8)
             else:
                 mask = free_mask.astype(np.int8)
@@ -546,10 +551,11 @@ class OptimizedBillboardEnv(gym.Env):
                 logger.warning("No affordable ad-billboard pairs for 'ea' mode")
                 return np.zeros(self.config.max_active_ads * self.n_nodes, dtype=np.int8)
 
-            # Vectorized budget check: (n_active,) budgets vs (n_nodes,) costs
+            # Vectorized budget check: (n_active,) budgets vs (n_nodes,) total_costs
             budgets = np.array([active_ads[i].remaining_budget for i in range(n_active)], dtype=np.float32)
             # Broadcasting: (n_active, 1) >= (1, n_nodes) -> (n_active, n_nodes)
-            affordable = budgets[:, None] >= costs[None, :]
+            # Use total_costs (cost × max_duration) for conservative estimate
+            affordable = budgets[:, None] >= total_costs[None, :]
             # Combine: (n_active, n_nodes) & (n_nodes,) broadcast
             valid_pairs = affordable & free_mask
 
@@ -571,9 +577,9 @@ class OptimizedBillboardEnv(gym.Env):
                 logger.warning("No affordable ad-billboard pairs for 'mh' mode")
                 return np.zeros((self.config.max_active_ads, self.n_nodes), dtype=np.int8)
 
-            # Vectorized budget check
+            # Vectorized budget check (cost × max_duration)
             budgets = np.array([active_ads[i].remaining_budget for i in range(n_active)], dtype=np.float32)
-            affordable = budgets[:, None] >= costs[None, :]
+            affordable = budgets[:, None] >= total_costs[None, :]
             valid_pairs = affordable & free_mask
 
             # Create full mask with zero-padding
@@ -918,9 +924,10 @@ class OptimizedBillboardEnv(gym.Env):
                     if 0 <= bb_idx < self.n_nodes and self.billboards[bb_idx].is_free():
                         billboard = self.billboards[bb_idx]
 
-                        # BUDGET TRACKING: Check if ad can afford billboard
-                        if ad_to_assign.assign_billboard(billboard.b_id, billboard.b_cost):
-                            duration = random.randint(*self.config.slot_duration_range)
+                        # BUDGET TRACKING: Charge cost × duration (per-timestep cost)
+                        duration = random.randint(*self.config.slot_duration_range)
+                        total_cost = billboard.b_cost * duration
+                        if ad_to_assign.assign_billboard(billboard.b_id, total_cost):
                             billboard.assign(ad_to_assign.aid, duration)
 
                             self.placement_history.append({
@@ -930,15 +937,17 @@ class OptimizedBillboardEnv(gym.Env):
                                 'billboard_id': billboard.b_id,
                                 'duration': duration,
                                 'demand': ad_to_assign.demand,
-                                'cost': billboard.b_cost  # Track cost in history
+                                'cost': total_cost  # Total cost (per-timestep cost × duration)
                             })
 
                             if self.config.debug:
                                 logger.debug(f"Assigned ad {ad_to_assign.aid} to billboard {billboard.b_id} "
-                                           f"(cost: ${billboard.b_cost:.2f}, remaining budget: ${ad_to_assign.remaining_budget:.2f})")
+                                           f"(total cost: ${total_cost:.2f} = ${billboard.b_cost:.2f}/step × {duration} steps, "
+                                           f"remaining budget: ${ad_to_assign.remaining_budget:.2f})")
                         elif self.config.debug:
                             logger.warning(f"Ad {ad_to_assign.aid} can't afford billboard {billboard.b_id} "
-                                         f"(cost: ${billboard.b_cost:.2f}, budget: ${ad_to_assign.remaining_budget:.2f})")
+                                         f"(total cost: ${total_cost:.2f} = ${billboard.b_cost:.2f}/step × {duration} steps, "
+                                         f"budget: ${ad_to_assign.remaining_budget:.2f})")
                     
                     elif self.config.debug:
                         if not (0 <= bb_idx < self.n_nodes):
@@ -978,9 +987,10 @@ class OptimizedBillboardEnv(gym.Env):
                                 ad_to_assign = active_ads[ad_idx]
                                 billboard = self.billboards[bb_idx]
 
-                                # BUDGET TRACKING: Try to assign billboard (deducts budget)
-                                if ad_to_assign.assign_billboard(billboard.b_id, billboard.b_cost):
-                                    duration = random.randint(*self.config.slot_duration_range)
+                                # BUDGET TRACKING: Charge cost × duration (per-timestep cost)
+                                duration = random.randint(*self.config.slot_duration_range)
+                                total_cost = billboard.b_cost * duration
+                                if ad_to_assign.assign_billboard(billboard.b_id, total_cost):
                                     billboard.assign(ad_to_assign.aid, duration)
 
                                     # FIXED: Mark billboard as used for this step
@@ -993,7 +1003,7 @@ class OptimizedBillboardEnv(gym.Env):
                                         'billboard_id': billboard.b_id,
                                         'duration': duration,
                                         'demand': ad_to_assign.demand,
-                                        'cost': billboard.b_cost
+                                        'cost': total_cost  # Total cost (per-timestep cost × duration)
                                     })
             
             elif self.action_mode == 'mh':
@@ -1018,9 +1028,10 @@ class OptimizedBillboardEnv(gym.Env):
                                 ad_to_assign = active_ads[ad_idx]
                                 billboard = self.billboards[bb_idx]
 
-                                # BUDGET TRACKING: Try to assign billboard (deducts budget)
-                                if ad_to_assign.assign_billboard(billboard.b_id, billboard.b_cost):
-                                    duration = random.randint(*self.config.slot_duration_range)
+                                # BUDGET TRACKING: Charge cost × duration (per-timestep cost)
+                                duration = random.randint(*self.config.slot_duration_range)
+                                total_cost = billboard.b_cost * duration
+                                if ad_to_assign.assign_billboard(billboard.b_id, total_cost):
                                     billboard.assign(ad_to_assign.aid, duration)
 
                                     # FIXED: Mark billboard as used for this step
@@ -1033,7 +1044,7 @@ class OptimizedBillboardEnv(gym.Env):
                                         'billboard_id': billboard.b_id,
                                         'duration': duration,
                                         'demand': ad_to_assign.demand,
-                                        'cost': billboard.b_cost
+                                        'cost': total_cost  # Total cost (per-timestep cost × duration)
                                     })
         
         except Exception as e:
