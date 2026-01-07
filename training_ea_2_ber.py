@@ -413,7 +413,7 @@ def main(use_test_config: bool = True):
     train_envs = create_vectorized_envs(
         env_config,
         n_envs=train_config['nr_envs'],
-        use_validation=train_config.get('use_validation', False)
+        use_validation=train_config.get('use_validation', False)   
     )
 
     logger.info("Creating 2 test environments...")
