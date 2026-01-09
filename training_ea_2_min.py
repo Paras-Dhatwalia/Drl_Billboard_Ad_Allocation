@@ -265,7 +265,7 @@ def create_vectorized_envs(env_config: Dict[str, Any], n_envs: int, use_validati
         # Linux/Mac: use SubprocVectorEnv for better performance
         logger.info("Using SubprocVectorEnv (Linux/Mac - multiprocessing enabled)")
         venv = ts.env.SubprocVectorEnv([env_factory for _ in range(n_envs)])
-        
+
     return venv
 
 
@@ -692,6 +692,70 @@ def main(use_test_config: bool = True):
 
     # Run training
     result = trainer.run()
+
+    # === POST-TRAINING EVALUATION ===
+    # Run a full episode to display environment performance metrics
+    logger.info("="*60)
+    logger.info("POST-TRAINING EVALUATION")
+    logger.info("="*60)
+    logger.info("Running full episode with trained policy...")
+
+    try:
+        # Create a fresh evaluation environment
+        eval_env = create_single_env(env_config, use_validation=False)
+        obs, info = eval_env.reset()
+
+        total_reward = 0.0
+        step_count = 0
+        done = False
+
+        # Run full episode
+        while not done:
+            with torch.no_grad():
+                # Create batch for policy
+                batch = ts.data.Batch(obs=[obs], info=[{}])
+                result_batch = policy(batch)
+                action = result_batch.act[0]
+
+                # Convert to numpy if needed
+                if hasattr(action, 'cpu'):
+                    action = action.cpu().numpy()
+
+            # Step environment
+            obs, reward, terminated, truncated, info = eval_env.step(action)
+            total_reward += reward
+            step_count += 1
+            done = terminated or truncated
+
+        # Display environment's internal performance metrics
+        logger.info("")
+        logger.info("Environment Performance Metrics:")
+        logger.info("-" * 40)
+
+        # Access the base environment through the wrapper
+        base_env = eval_env.env if hasattr(eval_env, 'env') else eval_env
+
+        # Call render_summary to display metrics
+        base_env.render_summary()
+
+        logger.info("")
+        logger.info(f"Episode Statistics:")
+        logger.info(f"  - Total steps: {step_count}")
+        logger.info(f"  - Total reward: {total_reward:.4f}")
+        logger.info(f"  - Avg reward/step: {total_reward/max(1, step_count):.6f}")
+
+        # Log final info dict metrics if available
+        if info:
+            logger.info(f"  - Final info: {info}")
+
+        eval_env.close()
+
+    except Exception as e:
+        logger.error(f"Post-training evaluation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    logger.info("="*60)
 
     # Save final model
     final_path = train_config["save_path"].replace('.pt', '_final.pt')
