@@ -15,7 +15,7 @@ Research Rationale:
 - More efficient than sequential NA (Node Action) mode
 - Captures ad-billboard compatibility directly
 - Critical for real-time billboard allocation
-
+l
 Key Differences from NA mode:
 1. Action distribution: Independent Bernoulli vs Categorical
 2. Action space: MultiBinary vs Discrete
@@ -265,7 +265,7 @@ def create_vectorized_envs(env_config: Dict[str, Any], n_envs: int, use_validati
         # Linux/Mac: use SubprocVectorEnv for better performance
         logger.info("Using SubprocVectorEnv (Linux/Mac - multiprocessing enabled)")
         venv = ts.env.SubprocVectorEnv([env_factory for _ in range(n_envs)])
-
+        
     return venv
 
 
@@ -413,7 +413,7 @@ def main(use_test_config: bool = True):
     train_envs = create_vectorized_envs(
         env_config,
         n_envs=train_config['nr_envs'],
-        use_validation=train_config.get('use_validation', False)
+        use_validation=train_config.get('use_validation', False)   
     )
 
     logger.info("Creating 2 test environments...")
@@ -422,7 +422,7 @@ def main(use_test_config: bool = True):
     # Create model configuration for EA mode
     model_config = {
         'node_feat_dim': 10,
-        'ad_feat_dim': 8,
+        'ad_feat_dim': 12,  # Updated from 8: added 4 budget features
         'hidden_dim': train_config['hidden_dim'],
         'n_graph_layers': train_config['n_graph_layers'],
         'mode': 'ea',  # CRITICAL: Edge Action mode
@@ -536,28 +536,20 @@ def main(use_test_config: bool = True):
     action_space = sample_env.action_space
     logger.info(f"Action space: {action_space}")
 
-    # WORKAROUND: The model currently outputs probabilities (after softmax), not logits
-    # For EA mode with IndependentBernoulli, we need logits
-    # Create a wrapper that converts probabilities back to logits
-    def dist_fn_wrapper(logits_or_probs):
+    # Distribution function for EA mode
+    # Model now outputs raw logits (not softmax probabilities)
+    # IndependentBernoulli will apply sigmoid internally to get independent probabilities
+    def dist_fn(logits):
         """
-        Wrapper for IndependentBernoulli that handles the model's output.
+        Create IndependentBernoulli distribution from model logits.
 
-        The model applies softmax internally (line 751 in models.py).
-        For Bernoulli, we need logits, so we convert probs back to logits.
+        The model outputs raw scores (logits) with mask already applied:
+        - Valid actions: learned logits
+        - Invalid actions: very negative (-1e9) -> sigmoid gives ~0 probability
 
-        TODO: Fix model to output logits directly for EA mode
+        IndependentBernoulli treats each (ad, billboard) pair as an independent
+        Bernoulli trial, allowing multiple selections per timestep.
         """
-        # If model outputs probabilities (0-1 range), convert to logits
-        if torch.all((logits_or_probs >= 0) & (logits_or_probs <= 1)):
-            # Clamp to avoid log(0) or log(1)
-            probs = torch.clamp(logits_or_probs, 1e-8, 1 - 1e-8)
-            logits = torch.log(probs / (1 - probs))  # inverse sigmoid (logit function)
-        else:
-            logits = logits_or_probs
-
-        # Note: mask handling will be done inside the model
-        # For now, create distribution without explicit mask
         return IndependentBernoulli(logits=logits, mask=None)
 
     policy = ts.policy.PPOPolicy(
@@ -565,7 +557,7 @@ def main(use_test_config: bool = True):
         critic=critic,
         optim=optimizer,
         action_space=action_space,
-        dist_fn=dist_fn_wrapper,  # CRITICAL: Use wrapped IndependentBernoulli
+        dist_fn=dist_fn,  # IndependentBernoulli for multi-selection EA mode
         discount_factor=train_config["discount_factor"],
         gae_lambda=train_config["gae_lambda"],
         vf_coef=train_config["vf_coef"],
