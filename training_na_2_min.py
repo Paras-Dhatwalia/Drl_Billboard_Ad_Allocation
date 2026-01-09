@@ -246,24 +246,25 @@ env_config = {
 }
 
 train_config = {
-    "nr_envs": 4,
-    "hidden_dim": 128,
-    "n_graph_layers": 3,
-    "lr": 3e-4,
-    "discount_factor": 0.99,
-    "gae_lambda": 0.95,
-    "vf_coef": 0.5,
-    "ent_coef": 0.01,
-    "max_grad_norm": 0.5,
-    "eps_clip": 0.2,
-    "batch_size": 64,  # Increased for better gradient estimates
-    "max_epoch": 20,
-    "step_per_collect": 512,  # More samples before update = more stable gradients
-    "step_per_epoch": 10000,
-    "repeat_per_collect": 4,  # Reduced to compensate for larger collection
+    "nr_envs": 6,               # 4 → 6: More parallel experience (memory-safe)
+    "hidden_dim": 160,          # 128 → 160: 30% more capacity for complex problem
+    "n_graph_layers": 4,        # 3 → 4: Deeper spatial reasoning
+    "lr": 3e-4,                 # KEEP: Works well
+    "lr_decay": 0.97,           # NEW: Slower LR decay (was 0.95)
+    "discount_factor": 0.99,    # KEEP
+    "gae_lambda": 0.95,         # KEEP
+    "vf_coef": 0.5,             # KEEP
+    "ent_coef": 0.015,          # 0.01 → 0.015: More exploration
+    "max_grad_norm": 0.5,       # KEEP
+    "eps_clip": 0.2,            # KEEP
+    "batch_size": 96,           # 64 → 96: Better gradient estimates
+    "max_epoch": 60,            # 20 → 60: 3x longer training (600K samples)
+    "step_per_collect": 768,    # 512 → 768: More samples per update
+    "step_per_epoch": 10000,    # KEEP
+    "repeat_per_collect": 6,    # 4 → 6: More gradient updates per collection
     "save_path": "models/ppo_billboard_na.pt",
     "log_path": "logs/ppo_billboard_na",
-    "buffer_size": 20000
+    "buffer_size": 30000        # 20000 → 30000: Larger replay buffer
 }
 
 # Global graph storage for environment factory
@@ -326,7 +327,7 @@ def main():
     # Create models
     model_config = {
         'node_feat_dim': 10,
-        'ad_feat_dim': 8,
+        'ad_feat_dim': 12,  # Updated from 8: added 4 budget features
         'hidden_dim': train_config['hidden_dim'],
         'n_graph_layers': train_config['n_graph_layers'],
         'mode': 'na',
@@ -351,7 +352,7 @@ def main():
         lr=train_config["lr"],
         eps=1e-5
     )
-    lr_scheduler = ExponentialLR(optimizer, gamma=0.95)
+    lr_scheduler = ExponentialLR(optimizer, gamma=train_config.get("lr_decay", 0.97))
 
     # Create PPO policy
     policy = ts.policy.PPOPolicy(
@@ -439,6 +440,70 @@ def main():
         )
 
         result = trainer.run()
+
+        # === POST-TRAINING EVALUATION ===
+        # Run a full episode to display environment performance metrics
+        logger.info("="*60)
+        logger.info("POST-TRAINING EVALUATION")
+        logger.info("="*60)
+        logger.info("Running full episode with trained policy...")
+
+        try:
+            # Create a fresh evaluation environment
+            eval_env = get_env()
+            obs, info = eval_env.reset()
+
+            total_reward = 0.0
+            step_count = 0
+            done = False
+
+            # Run full episode
+            while not done:
+                with torch.no_grad():
+                    # Create batch for policy
+                    batch = ts.data.Batch(obs=[obs], info=[{}])
+                    result_batch = policy(batch)
+                    action = result_batch.act[0]
+
+                    # Convert to numpy if needed
+                    if hasattr(action, 'cpu'):
+                        action = action.cpu().numpy()
+                    if hasattr(action, 'item'):
+                        action = action.item()
+
+                # Step environment
+                obs, reward, terminated, truncated, info = eval_env.step(action)
+                total_reward += reward
+                step_count += 1
+                done = terminated or truncated
+
+            # Display environment's internal performance metrics
+            logger.info("")
+            logger.info("Environment Performance Metrics:")
+            logger.info("-" * 40)
+
+            # Access the base environment through the wrapper
+            base_env = eval_env.env if hasattr(eval_env, 'env') else eval_env
+
+            # Call render_summary to display metrics
+            base_env.render_summary()
+
+            logger.info("")
+            logger.info(f"Episode Statistics:")
+            logger.info(f"  - Total steps: {step_count}")
+            logger.info(f"  - Total reward: {total_reward:.4f}")
+            logger.info(f"  - Avg reward/step: {total_reward/max(1, step_count):.6f}")
+
+            # Log final info dict metrics if available
+            if info:
+                logger.info(f"  - Final info: {info}")
+
+            eval_env.close()
+
+        except Exception as e:
+            logger.error(f"Post-training evaluation failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         logger.info("="*60)
         logger.info(f"Training complete! Best reward: {best_reward:.2f}")
